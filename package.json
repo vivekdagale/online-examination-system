@@ -1,0 +1,20 @@
+{
+  "name": "online-examination-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/backend", "apps/frontend"],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,green \"npm run dev:backend\" \"npm run dev:frontend\"",
+    "dev:backend": "npm --workspace apps/backend run start:dev",
+    "dev:frontend": "npm --workspace apps/frontend run dev",
+    "build": "npm --workspace apps/backend run build && npm --workspace apps/frontend run build",
+    "lint": "npm --workspace apps/backend run lint && npm --workspace apps/frontend run lint",
+    "test": "npm --workspace apps/backend run test",
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "db:migrate": "npm --workspace apps/backend run prisma:migrate",
+    "db:seed": "npm --workspace apps/backend run prisma:seed"
+  },
+  "devDependencies": { "concurrently": "^9.1.2" },
+  "engines": { "node": ">=20.11 <23" }
+}

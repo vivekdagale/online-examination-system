@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+enum Role {
+  ADMIN
+  FACULTY
+  STUDENT
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  DISABLED
+}
+
+enum ExamStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  MULTIPLE_SELECT
+  DESCRIPTIVE
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EVALUATED
+}
+
+enum SubmissionReason {
+  MANUAL
+  TIMEOUT
+  ADMIN
+}
+
+enum ResultStatus {
+  PENDING_EVALUATION
+  EVALUATED
+  PUBLISHED
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+model User {
+  id                String        @id @default(cuid())
+  email             String        @unique
+  name              String
+  passwordHash      String
+  role              Role
+  status            AccountStatus @default(PENDING)
+  emailVerifiedAt   DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  facultyProfile    FacultyProfile?
+  studentProfile    StudentProfile?
+  examsCreated      Exam[]        @relation("ExamCreator")
+  attempts          ExamAttempt[]
+  eligibleExams     ExamEligibility[]
+  announcements     Announcement[]
+  auditLogs         AuditLog[]
+}
+model StudentProfile {
+  id          String @id @default(cuid())
+  userId      String @unique
+  studentCode String? @unique
+  department  String?
+  year        Int?
+  user        User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+model FacultyProfile {
+  id                  String @id @default(cuid())
+  userId              String @unique
+  employeeCode        String? @unique
+  department          String?
+  verificationStatus  VerificationStatus @default(PENDING)
+  verificationNote    String?
+  user                User @relation(fields: [userId], references: [id], onDelete: Restrict)
+}
+model Exam {
+  id                 String @id @default(cuid())
+  title              String
+  subject            String
+  instructions       String
+  status             ExamStatus @default(DRAFT)
+  durationMinutes    Int
+  opensAt            DateTime
+  closesAt           DateTime
+  maxMarks           Float
+  passMarks          Float @default(0)
+  maxAttempts        Int @default(1)
+  negativeMarking    Boolean @default(false)
+  negativeMarkValue  Float @default(0)
+  randomizeQuestions Boolean @default(false)
+  createdById        String
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  createdBy          User @relation("ExamCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  questions          Question[]
+  eligibility        ExamEligibility[]
+  attempts           ExamAttempt[]
+  @@index([status, opensAt, closesAt])
+}
+model ExamEligibility {
+  id        String @id @default(cuid())
+  examId    String
+  studentId String
+  exam      Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  student   User @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  @@unique([examId, studentId])
+  @@index([studentId])
+}
+model Question {
+  id             String @id @default(cuid())
+  examId         String
+  prompt         String
+  type           QuestionType
+  marks          Float
+  negativeMarks  Float @default(0)
+  position       Int
+  exam           Exam @relation(fields: [examId], references: [id], onDelete: Cascade)
+  options        Option[]
+  answers        StudentAnswer[]
+  @@unique([examId, position])
+  @@index([examId])
+}
+model Option {
+  id          String @id @default(cuid())
+  questionId  String
+  text        String
+  isCorrect   Boolean @default(false)
+  position    Int
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  @@unique([questionId, position])
+}
+model ExamAttempt {
+  id               String @id @default(cuid())
+  examId           String
+  studentId        String
+  status           AttemptStatus @default(IN_PROGRESS)
+  startedAt        DateTime @default(now())
+  deadlineAt       DateTime
+  submittedAt      DateTime?
+  submissionReason SubmissionReason?
+  sessionTokenHash String?
+  lastHeartbeatAt  DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  exam             Exam @relation(fields: [examId], references: [id], onDelete: Restrict)
+  student          User @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  answers          StudentAnswer[]
+  result           Result?
+  activityLogs     ExamActivityLog[]
+  @@unique([examId, studentId])
+  @@index([studentId, status])
+  @@index([status, deadlineAt])
+}
+model StudentAnswer {
+  id           String @id @default(cuid())
+  attemptId    String
+  questionId   String
+  selectedIds  String[] @default([])
+  textAnswer   String?
+  isFlagged    Boolean @default(false)
+  version      Int @default(1)
+  savedAt      DateTime @updatedAt
+  awardedMarks Float?
+  feedback     String?
+  attempt      ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  question     Question @relation(fields: [questionId], references: [id], onDelete: Restrict)
+  @@unique([attemptId, questionId])
+}
+model Result {
+  id               String @id @default(cuid())
+  attemptId        String @unique
+  objectiveMarks   Float @default(0)
+  descriptiveMarks Float?
+  totalMarks       Float?
+  status           ResultStatus @default(PENDING_EVALUATION)
+  passed            Boolean?
+  publishedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  attempt          ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Restrict)
+}
+model ExamActivityLog {
+  id        String @id @default(cuid())
+  attemptId String
+  eventType String
+  detail    Json?
+  createdAt DateTime @default(now())
+  attempt   ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  @@index([attemptId, createdAt])
+}
+model ExamSession {
+  id          String @id @default(cuid())
+  attemptId   String @unique
+  sessionHash String
+  heartbeatAt DateTime @default(now())
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+}
+model Announcement {
+  id          String @id @default(cuid())
+  title       String
+  body        String
+  published   Boolean @default(false)
+  authorId    String
+  createdAt   DateTime @default(now())
+  author      User @relation(fields: [authorId], references: [id], onDelete: Restrict)
+}
+model AuditLog {
+  id         String @id @default(cuid())
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  detail     Json?
+  createdAt  DateTime @default(now())
+  actor      User? @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  @@index([createdAt])
+}
+model RefreshToken {
+  id        String @id @default(cuid())
+  userId    String
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, revokedAt])
+}
